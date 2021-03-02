@@ -14,8 +14,10 @@ import (
 	"github.com/snowflakedb/gosnowflake"
 	"golang.org/x/crypto/ssh"
 
+	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -38,14 +40,14 @@ func Provider() *schema.Provider {
 				Optional:      true,
 				DefaultFunc:   schema.EnvDefaultFunc("SNOWFLAKE_PASSWORD", nil),
 				Sensitive:     true,
-				ConflictsWith: []string{"browser_auth", "private_key_path", "oauth_access_token"},
+				ConflictsWith: []string{"browser_auth", "private_key_path", "oauth_access_token", "oauth_refresh_token"},
 			},
 			"oauth_access_token": {
 				Type:          schema.TypeString,
 				Optional:      true,
 				DefaultFunc:   schema.EnvDefaultFunc("SNOWFLAKE_OAUTH_ACCESS_TOKEN", nil),
 				Sensitive:     true,
-				ConflictsWith: []string{"browser_auth", "private_key_path", "password"},
+				ConflictsWith: []string{"browser_auth", "private_key_path", "password", "oauth_refresh_token"},
 			},
 			"oauth_refresh_token": {
 				Type:          schema.TypeString,
@@ -61,6 +63,7 @@ func Provider() *schema.Provider {
 				DefaultFunc:   schema.EnvDefaultFunc("SNOWFLAKE_OAUTH_CLIENT_ID", nil),
 				Sensitive:     true,
 				ConflictsWith: []string{"browser_auth", "private_key_path", "password", "oauth_access_token"},
+				RequiredWith:  []string{"oauth_refresh_token", "oauth_client_secret", "oauth_endpoint", "oauth_redirect_url"},
 			},
 			"oauth_client_secret": {
 				Type:          schema.TypeString,
@@ -68,6 +71,7 @@ func Provider() *schema.Provider {
 				DefaultFunc:   schema.EnvDefaultFunc("SNOWFLAKE_OAUTH_CLIENT_SECRET", nil),
 				Sensitive:     true,
 				ConflictsWith: []string{"browser_auth", "private_key_path", "password", "oauth_access_token"},
+				RequiredWith:  []string{"oauth_client_id", "oauth_refresh_token", "oauth_endpoint", "oauth_redirect_url"},
 			},
 			"oauth_endpoint": {
 				Type:          schema.TypeString,
@@ -75,6 +79,7 @@ func Provider() *schema.Provider {
 				DefaultFunc:   schema.EnvDefaultFunc("SNOWFLAKE_OAUTH_ENDPOINT", nil),
 				Sensitive:     true,
 				ConflictsWith: []string{"browser_auth", "private_key_path", "password", "oauth_access_token"},
+				RequiredWith:  []string{"oauth_client_id", "oauth_client_secret", "oauth_refresh_token", "oauth_redirect_url"},
 			},
 			"oauth_redirect_url": {
 				Type:          schema.TypeString,
@@ -82,20 +87,21 @@ func Provider() *schema.Provider {
 				DefaultFunc:   schema.EnvDefaultFunc("SNOWFLAKE_OAUTH_REDIRECT_URL", nil),
 				Sensitive:     true,
 				ConflictsWith: []string{"browser_auth", "private_key_path", "password", "oauth_access_token"},
+				RequiredWith:  []string{"oauth_client_id", "oauth_client_secret", "oauth_endpoint", "oauth_refresh_token"},
 			},
 			"browser_auth": {
 				Type:          schema.TypeBool,
 				Optional:      true,
 				DefaultFunc:   schema.EnvDefaultFunc("SNOWFLAKE_USE_BROWSER_AUTH", nil),
 				Sensitive:     false,
-				ConflictsWith: []string{"password", "private_key_path", "oauth_access_token"},
+				ConflictsWith: []string{"password", "private_key_path", "oauth_access_token", "oauth_refresh_token"},
 			},
 			"private_key_path": {
 				Type:          schema.TypeString,
 				Optional:      true,
 				DefaultFunc:   schema.EnvDefaultFunc("SNOWFLAKE_PRIVATE_KEY_PATH", nil),
 				Sensitive:     true,
-				ConflictsWith: []string{"browser_auth", "password", "oauth_access_token"},
+				ConflictsWith: []string{"browser_auth", "password", "oauth_access_token", "oauth_refresh_token"},
 			},
 			"role": {
 				Type:        schema.TypeString,
@@ -183,11 +189,11 @@ func ConfigureProvider(s *schema.ResourceData) (interface{}, error) {
 	oauthEndpoint := s.Get("oauth_endpoint").(string)
 	oauthRedirectUrl := s.Get("oauth_redirect_url").(string)
 
-	accessToken, err := getAccessToken(oauthEndpoint, oauthClientId, oauthClientSecret, getData(oauthRefreshToken, oauthRedirectUrl))
-	if err != nil {
-		errors.Wrap(err, "could not retreive access token from refresh token")
-	}
-	if accessToken != "" {
+	if oauthRefreshToken != "" {
+		accessToken, err := getAccessToken(oauthEndpoint, oauthClientId, oauthClientSecret, getData(oauthRefreshToken, oauthRedirectUrl))
+		if err != nil {
+			errors.Wrap(err, "could not retreive access token from refresh token")
+		}
 		oauthAccessToken = accessToken
 	}
 
@@ -313,8 +319,8 @@ func getAccessToken(
 	var result Result
 
 	response, err := client.Do(request)
-	if err != nil {
-		errors.Wrap(err, "Response status returned an error")
+	if err != nil || response.StatusCode != 200 {
+		errors.Wrap(err, fmt.Sprintf("Response status returned an error: %s:%s", strconv.Itoa(response.StatusCode), http.StatusText(response.StatusCode)))
 	}
 	defer response.Body.Close()
 	body, err := ioutil.ReadAll(response.Body)
