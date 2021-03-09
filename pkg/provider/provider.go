@@ -184,13 +184,13 @@ func ConfigureProvider(s *schema.ResourceData) (interface{}, error) {
 	region := s.Get("region").(string)
 	role := s.Get("role").(string)
 	oauthRefreshToken := s.Get("oauth_refresh_token").(string)
-	oauthClientId := s.Get("oauth_client_id").(string)
+	oauthClientID := s.Get("oauth_client_id").(string)
 	oauthClientSecret := s.Get("oauth_client_secret").(string)
 	oauthEndpoint := s.Get("oauth_endpoint").(string)
-	oauthRedirectUrl := s.Get("oauth_redirect_url").(string)
+	oauthRedirectURL := s.Get("oauth_redirect_url").(string)
 
 	if oauthRefreshToken != "" {
-		accessToken, err := getAccessToken(oauthEndpoint, oauthClientId, oauthClientSecret, getData(oauthRefreshToken, oauthRedirectUrl))
+		accessToken, err := GetAccessToken(oauthEndpoint, oauthClientID, oauthClientSecret, GetData(oauthRefreshToken, oauthRedirectURL))
 		if err != nil {
 			errors.Wrap(err, "could not retreive access token from refresh token")
 		}
@@ -288,15 +288,15 @@ type Result struct {
 	ExpiresIn   int    `json:"expires_in"`
 }
 
-func getData(refreshToken, redirectUrl string) *url.Values {
-	data := &url.Values{}
+func GetData(refreshToken, redirectUrl string) url.Values {
+	data := url.Values{}
 	data.Set("grant_type", "refresh_token")
 	data.Set("refresh_token", refreshToken)
 	data.Set("redirect_uri", redirectUrl)
 	return data
 }
 
-func getRequest(dataContent *strings.Reader, endPoint, clientId, clientSecret string) *http.Request {
+func GetRequest(dataContent *strings.Reader, endPoint, clientId, clientSecret string) *http.Request {
 	request, err := http.NewRequest("POST", endPoint, dataContent)
 	if err != nil {
 		errors.Wrap(err, "Request to the endpoint could not be completed")
@@ -307,20 +307,23 @@ func getRequest(dataContent *strings.Reader, endPoint, clientId, clientSecret st
 
 }
 
-func getAccessToken(
+func GetAccessToken(
 	endPoint,
 	client_id,
 	client_secret string,
-	data *url.Values) (string, error) {
+	data url.Values) (string, error) {
 
 	client := &http.Client{}
-	request := getRequest(strings.NewReader(data.Encode()), endPoint, client_id, client_secret)
+	request := GetRequest(strings.NewReader(data.Encode()), endPoint, client_id, client_secret)
 
 	var result Result
 
 	response, err := client.Do(request)
-	if err != nil || response.StatusCode != 200 {
-		errors.Wrap(err, fmt.Sprintf("Response status returned an error: %s:%s", strconv.Itoa(response.StatusCode), http.StatusText(response.StatusCode)))
+	if err != nil {
+		errors.Wrap(err, "Response status returned an error:")
+	}
+	if response.StatusCode != 200 {
+		errors.New(fmt.Sprintf("Response status code: %s: %s", strconv.Itoa(response.StatusCode), http.StatusText(response.StatusCode)))
 	}
 	defer response.Body.Close()
 	body, err := ioutil.ReadAll(response.Body)
